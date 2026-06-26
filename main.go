@@ -64,6 +64,10 @@ type Game struct {
 	lastPower    time.Time
 	powerCycle   int
 	moveInterval time.Duration
+
+	currentCombo  int
+	lastEatTime   time.Time
+	comboFlashEnd time.Time
 }
 
 func scoreFile() string {
@@ -113,6 +117,9 @@ func (g *Game) init() {
 	g.powerUp = nil
 	g.powerCycle = 0
 	g.moveInterval = g.baseSpeed
+	g.currentCombo = 0
+	g.lastEatTime = time.Time{}
+	g.comboFlashEnd = time.Time{}
 
 	occupied := map[Point]bool{}
 	for _, s := range g.snake {
@@ -227,6 +234,34 @@ func (g *Game) spawnPowerUp() {
 	}
 }
 
+func (g *Game) updateCombo() int {
+	now := time.Now()
+	if !g.lastEatTime.IsZero() && now.Sub(g.lastEatTime) < 2*time.Second {
+		g.currentCombo++
+		if g.currentCombo > 5 {
+			g.currentCombo = 5
+		}
+	} else {
+		g.currentCombo = 1
+	}
+	g.lastEatTime = now
+	g.comboFlashEnd = now.Add(300 * time.Millisecond)
+	return g.currentCombo
+}
+
+func comboColor(mult int) tcell.Color {
+	switch mult {
+	case 1:
+		return tcell.ColorWhite
+	case 2:
+		return tcell.ColorYellow
+	case 3:
+		return tcell.ColorOrange
+	default:
+		return tcell.ColorRed
+	}
+}
+
 func (g *Game) currentInterval() time.Duration {
 	interval := g.baseSpeed
 	now := time.Now()
@@ -282,14 +317,16 @@ func (g *Game) move() bool {
 	ate := false
 	for i, f := range g.foods {
 		if f == newHead {
-			g.score += 10
+			mult := g.updateCombo()
+			g.score += 10 * mult
 			g.replaceRedFood(i)
 			ate = true
 			break
 		}
 	}
 	if !ate && newHead == g.goldFood {
-		g.score += 30
+		mult := g.updateCombo()
+		g.score += 30 * mult
 		g.speedBoost = true
 		g.boostEnd = time.Now().Add(5 * time.Second)
 		g.replaceGoldFood()
@@ -494,7 +531,20 @@ func draw(s tcell.Screen, g *Game) {
 	headStyle := tcell.StyleDefault.Foreground(tcell.ColorGreen).Background(tcell.ColorBlack).Bold(true)
 	for i, seg := range g.snake {
 		if i == len(g.snake)-1 {
-			setCell(s,ox+seg.X, oy+seg.Y, '◉', headStyle)
+			hStyle := headStyle
+			if now := time.Now(); !g.comboFlashEnd.IsZero() && now.Before(g.comboFlashEnd) {
+				c := comboColor(g.currentCombo)
+				if g.currentCombo >= 4 {
+					c = tcell.ColorRed
+				}
+				if g.currentCombo >= 5 {
+					c = tcell.ColorRed
+					hStyle = tcell.StyleDefault.Foreground(c).Background(tcell.ColorBlack).Bold(true).Blink(true)
+				} else {
+					hStyle = tcell.StyleDefault.Foreground(c).Background(tcell.ColorBlack).Bold(true)
+				}
+			}
+			setCell(s,ox+seg.X, oy+seg.Y, '◉', hStyle)
 		} else {
 			setCell(s,ox+seg.X, oy+seg.Y, '■', snakeStyle)
 		}
@@ -508,8 +558,29 @@ func draw(s tcell.Screen, g *Game) {
 
 	infoY := oy + MapH + 1
 	scoreStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite)
-	setCell(s,ox, infoY, ' ', scoreStyle)
-	drawText(s, ox, infoY, fmt.Sprintf("Score: %d   High: %d   Length: %d", g.score, g.highScore, len(g.snake)), scoreStyle)
+	comboStr := ""
+	showCombo := g.currentCombo > 0
+	if !g.lastEatTime.IsZero() && time.Since(g.lastEatTime) >= 2*time.Second {
+		showCombo = false
+	}
+	if showCombo {
+		comboColor_ := comboColor(g.currentCombo)
+		comboStyle := tcell.StyleDefault.Foreground(comboColor_).Bold(true)
+		if g.currentCombo >= 4 {
+			comboStyle = tcell.StyleDefault.Foreground(tcell.ColorRed).Bold(true)
+		}
+		if g.currentCombo >= 5 {
+			comboStyle = tcell.StyleDefault.Foreground(tcell.ColorRed).Bold(true).Blink(true)
+		}
+		comboStr = fmt.Sprintf("  x%d", g.currentCombo)
+		setCell(s,ox, infoY, ' ', scoreStyle)
+		drawText(s, ox, infoY, fmt.Sprintf("Score: %d   High: %d   Length: %d", g.score, g.highScore, len(g.snake)), scoreStyle)
+		comboX := ox + len(fmt.Sprintf("Score: %d   High: %d   Length: %d", g.score, g.highScore, len(g.snake)))
+		drawText(s, comboX, infoY, comboStr, comboStyle)
+	} else {
+		setCell(s,ox, infoY, ' ', scoreStyle)
+		drawText(s, ox, infoY, fmt.Sprintf("Score: %d   High: %d   Length: %d", g.score, g.highScore, len(g.snake)), scoreStyle)
+	}
 
 	statusY := infoY + 1
 	now := time.Now()
