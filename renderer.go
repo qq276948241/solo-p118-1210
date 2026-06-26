@@ -209,11 +209,11 @@ func (r *Renderer) Draw(s tcell.Screen, g *Game) {
 	statusY := infoY + 1
 	now := time.Now()
 	status := ""
-	if g.speedBoost && now.Before(g.boostEnd) {
+	if g.isBoostActive() {
 		remain := g.boostEnd.Sub(now).Truncate(time.Second / 2)
 		status += fmt.Sprintf("  SPEED x2 %.0fs", remain.Seconds())
 	}
-	if !g.slowEnd.IsZero() && now.Before(g.slowEnd) {
+	if g.isSlowActive() {
 		remain := g.slowEnd.Sub(now).Truncate(time.Second / 2)
 		status += fmt.Sprintf("  SLOW %.0fs", remain.Seconds())
 	}

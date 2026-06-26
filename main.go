@@ -52,7 +52,6 @@ type Game struct {
 	score      int
 	highScore  int
 	baseSpeed  time.Duration
-	speedBoost bool
 	boostEnd   time.Time
 	slowEnd    time.Time
 	wallPass   bool
@@ -112,11 +111,12 @@ func (g *Game) init() {
 	g.score = 0
 	g.paused = false
 	g.over = false
-	g.speedBoost = false
 	g.wallPass = false
 	g.powerUp = nil
 	g.powerCycle = 0
 	g.moveInterval = g.baseSpeed
+	g.boostEnd = time.Time{}
+	g.slowEnd = time.Time{}
 	g.currentCombo = 0
 	g.lastEatTime = time.Time{}
 	g.comboFlashEnd = time.Time{}
@@ -249,18 +249,21 @@ func (g *Game) updateCombo() int {
 	return g.currentCombo
 }
 
+func (g *Game) isBoostActive() bool {
+	return !g.boostEnd.IsZero() && time.Now().Before(g.boostEnd)
+}
+
+func (g *Game) isSlowActive() bool {
+	return !g.slowEnd.IsZero() && time.Now().Before(g.slowEnd)
+}
+
 func (g *Game) currentInterval() time.Duration {
 	interval := g.baseSpeed
-	now := time.Now()
-	if g.speedBoost && now.Before(g.boostEnd) {
+	if g.isBoostActive() {
 		interval /= 2
-	} else {
-		g.speedBoost = false
 	}
-	if !g.slowEnd.IsZero() && now.Before(g.slowEnd) {
+	if g.isSlowActive() {
 		interval = interval * 3 / 2
-	} else {
-		g.slowEnd = time.Time{}
 	}
 	return interval
 }
@@ -314,7 +317,6 @@ func (g *Game) move() bool {
 	if !ate && newHead == g.goldFood {
 		mult := g.updateCombo()
 		g.score += 30 * mult
-		g.speedBoost = true
 		g.boostEnd = time.Now().Add(5 * time.Second)
 		g.replaceGoldFood()
 		ate = true
